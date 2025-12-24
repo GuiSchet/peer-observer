@@ -53,6 +53,8 @@ Options:
           Disable querying and publishing of `getchaintxstats` data
       --disable-getnetworkinfo
           Disable querying and publishing of `getnetworkinfo` data
+      --disable-getblockchaininfo
+          Disable querying and publishing of `getblockchaininfo` data
   -h, --help
           Print help
   -V, --version

@@ -28,8 +28,9 @@ use shared::{
         log_extractor::{self, LogDebugCategory},
         p2p_extractor,
         rpc_extractor::{
-            self, AddrManInfo, AddrManInfoNetwork, ChainTxStats, MemoryInfo, MempoolInfo,
-            NetTotals, NetworkInfo, NetworkInfoNetwork, PeerInfo, PeerInfos, UploadTarget,
+            self, AddrManInfo, AddrManInfoNetwork, BlockchainInfo, ChainTxStats, MemoryInfo,
+            MempoolInfo, NetTotals, NetworkInfo, NetworkInfoNetwork, PeerInfo, PeerInfos,
+            UploadTarget,
         },
     },
     rand::{self, Rng},
@@ -3351,6 +3352,56 @@ async fn test_integration_metrics_rpc_getnetworkinfo() {
         peerobserver_rpc_networkinfo_networks{network="ipv4",property="reachable"} 1
         peerobserver_rpc_networkinfo_networks{network="ipv6",property="limited"} 0
         peerobserver_rpc_networkinfo_networks{network="ipv6",property="reachable"} 1
+        "#,
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_integration_metrics_rpc_getblockchaininfo() {
+    println!("test that the getblockchaininfo metrics work");
+
+    publish_and_check(
+        &[
+            Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
+                rpc_event: Some(rpc_extractor::rpc::RpcEvent::BlockchainInfo(
+                    BlockchainInfo {
+                        chain: "main".to_string(),
+                        blocks: 850000,
+                        headers: 850010,
+                        bestblockhash:
+                            "0000000000000000000123456789abcdef0123456789abcdef0123456789abcd"
+                                .to_string(),
+                        difficulty: 83148355189239.77,
+                        time: 1704067200,
+                        mediantime: 1704066000,
+                        verificationprogress: 0.5,
+                        initialblockdownload: true,
+                        chainwork:
+                            "00000000000000000000000000000000000000005c000e2ce43fe415a2a16a54"
+                                .to_string(),
+                        size_on_disk: 623000000000,
+                        pruned: true,
+                        prune_height: 850000,
+                        prune_target_size: 1000,
+                        warnings: vec!["warning1".to_string(), "warning2".to_string()],
+                    },
+                )),
+            }))
+            .unwrap(),
+        ],
+        Subject::Rpc,
+        r#"
+        peerobserver_rpc_blockchaininfo_blocks 850000
+        peerobserver_rpc_blockchaininfo_headers 850010
+        peerobserver_rpc_blockchaininfo_difficulty 83148355189239.77
+        peerobserver_rpc_blockchaininfo_verification_progress 0.5
+        peerobserver_rpc_blockchaininfo_initial_block_download 1
+        peerobserver_rpc_blockchaininfo_size_on_disk 623000000000
+        peerobserver_rpc_blockchaininfo_pruned 1
+        peerobserver_rpc_blockchaininfo_prune_height 850000
+        peerobserver_rpc_blockchaininfo_prune_target_size 1000
+        peerobserver_rpc_blockchaininfo_warnings 2
         "#,
     )
     .await;
