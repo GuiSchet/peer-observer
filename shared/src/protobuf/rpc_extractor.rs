@@ -8,6 +8,7 @@ use corepc_client::types::v26::{
     GetMempoolInfo, GetPeerInfo as RPCGetPeerInfo, PeerInfo as RPCPeerInfo,
 };
 use corepc_client::types::v28::{GetNetworkInfo, GetNetworkInfoAddress, GetNetworkInfoNetwork};
+use corepc_client::types::v29::GetBlockchainInfo;
 use std::fmt;
 
 // structs are generated via the rpc_extractor.proto file
@@ -45,6 +46,7 @@ impl fmt::Display for rpc::RpcEvent {
             rpc::RpcEvent::AddrmanInfo(info) => write!(f, "{}", info),
             rpc::RpcEvent::ChainTxStats(stats) => write!(f, "{}", stats),
             rpc::RpcEvent::NetworkInfo(info) => write!(f, "{}", info),
+            rpc::RpcEvent::BlockchainInfo(info) => write!(f, "{}", info),
         }
     }
 }
@@ -334,5 +336,42 @@ impl fmt::Display for NetworkInfoNetwork {
 impl fmt::Display for NetworkInfoLocalAddress {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         write!(f, "LocalAddress({}:{})", self.address, self.port)
+    }
+}
+
+impl From<GetBlockchainInfo> for BlockchainInfo {
+    fn from(info: GetBlockchainInfo) -> Self {
+        BlockchainInfo {
+            chain: info.chain,
+            blocks: info.blocks as u32,
+            headers: info.headers as u32,
+            bestblockhash: info.best_block_hash,
+            difficulty: info.difficulty,
+            time: info.time as u64,
+            mediantime: info.median_time as u64,
+            verificationprogress: info.verification_progress,
+            initialblockdownload: info.initial_block_download,
+            chainwork: info.chain_work,
+            size_on_disk: info.size_on_disk,
+            pruned: info.pruned,
+            prune_height: info.prune_height.map(|h| h as u32).unwrap_or_default(),
+            prune_target_size: info.prune_target_size.map(|s| s as u64).unwrap_or_default(),
+            warnings: info.warnings,
+        }
+    }
+}
+
+impl fmt::Display for BlockchainInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        let warnings_display = if self.warnings.is_empty() {
+            "none".to_string()
+        } else {
+            format!("[{}]", self.warnings.join("; "))
+        };
+        write!(
+            f,
+            "BlockchainInfo(chain={}, blocks={}, ibd={}, warnings={})",
+            self.chain, self.blocks, self.initialblockdownload, warnings_display
+        )
     }
 }

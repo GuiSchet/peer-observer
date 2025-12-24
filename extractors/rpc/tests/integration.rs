@@ -8,8 +8,8 @@ use shared::{
     prost::Message,
     protobuf::event::{Event, event::PeerObserverEvent},
     protobuf::rpc_extractor::rpc::RpcEvent::{
-        AddrmanInfo, ChainTxStats, MemoryInfo, MempoolInfo, NetTotals, NetworkInfo, PeerInfos,
-        Uptime,
+        AddrmanInfo, BlockchainInfo, ChainTxStats, MemoryInfo, MempoolInfo, NetTotals, NetworkInfo,
+        PeerInfos, Uptime,
     },
     simple_logger::SimpleLogger,
     testing::nats_server::NatsServerForTesting,
@@ -47,6 +47,7 @@ fn make_test_args(
     disable_getaddrmaninfo: bool,
     disable_getchaintxstats: bool,
     disable_getnetworkinfo: bool,
+    disable_getblockchaininfo: bool,
 ) -> Args {
     Args::new(
         format!("127.0.0.1:{}", nats_port),
@@ -62,6 +63,7 @@ fn make_test_args(
         disable_getaddrmaninfo,
         disable_getchaintxstats,
         disable_getnetworkinfo,
+        disable_getblockchaininfo,
     )
 }
 
@@ -102,6 +104,7 @@ async fn check(
     disable_getaddrmaninfo: bool,
     disable_getchaintxstats: bool,
     disable_getnetworkinfo: bool,
+    disable_getblockchaininfo: bool,
     check_expected: fn(PeerObserverEvent) -> (),
 ) {
     setup();
@@ -122,6 +125,7 @@ async fn check(
             disable_getaddrmaninfo,
             disable_getchaintxstats,
             disable_getnetworkinfo,
+            disable_getblockchaininfo,
         );
         rpc_extractor::run(args, shutdown_rx.clone())
             .await
@@ -149,24 +153,35 @@ async fn check(
 async fn test_integration_rpc_getpeerinfo() {
     println!("test that we receive getpeerinfo RPC events");
 
-    check(false, true, true, true, true, true, true, true, |event| {
-        match event {
-            PeerObserverEvent::RpcExtractor(r) => {
-                if let Some(ref e) = r.rpc_event {
-                    match e {
-                        PeerInfos(p) => {
-                            // we expect 1 peer to be connected
-                            assert_eq!(p.infos.len(), 1);
-                            let peer = p.infos.first().expect("we have expactly one peer here");
-                            assert_eq!(peer.connection_type, "inbound");
+    check(
+        false,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        |event| {
+            match event {
+                PeerObserverEvent::RpcExtractor(r) => {
+                    if let Some(ref e) = r.rpc_event {
+                        match e {
+                            PeerInfos(p) => {
+                                // we expect 1 peer to be connected
+                                assert_eq!(p.infos.len(), 1);
+                                let peer = p.infos.first().expect("we have expactly one peer here");
+                                assert_eq!(peer.connection_type, "inbound");
+                            }
+                            _ => panic!("unexpected RPC data {:?}", r.rpc_event),
                         }
-                        _ => panic!("unexpected RPC data {:?}", r.rpc_event),
                     }
                 }
+                _ => panic!("unexpected event {:?}", event),
             }
-            _ => panic!("unexpected event {:?}", event),
-        }
-    })
+        },
+    )
     .await;
 }
 
@@ -177,6 +192,7 @@ async fn test_integration_rpc_getmempoolinfo() {
     check(
         true,
         false,
+        true,
         true,
         true,
         true,
@@ -225,6 +241,7 @@ async fn test_integration_rpc_uptime() {
         true,
         true,
         true,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -252,6 +269,7 @@ async fn test_integration_rpc_getnettotals() {
         true,
         true,
         false,
+        true,
         true,
         true,
         true,
@@ -288,6 +306,7 @@ async fn test_integration_rpc_getmemoryinfo() {
         true,
         true,
         true,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -318,6 +337,7 @@ async fn test_integration_rpc_getaddrmaninfo() {
         true,
         true,
         false,
+        true,
         true,
         true,
         |event| match event {
@@ -367,6 +387,7 @@ async fn test_integration_rpc_getchaintxstats() {
         true,
         false,
         true,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -404,6 +425,7 @@ async fn test_integration_rpc_getnetworkinfo() {
         true,
         true,
         false,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -436,6 +458,61 @@ async fn test_integration_rpc_getnetworkinfo() {
                                 info.incremental_fee > 0.0,
                                 "Incremental fee should be positive"
                             );
+                        }
+                        _ => panic!("unexpected RPC data {:?}", r.rpc_event),
+                    }
+                }
+            }
+            _ => panic!("unexpected event {:?}", event),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_integration_rpc_getblockchaininfo() {
+    println!("test that we receive getblockchaininfo RPC events");
+
+    check(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        |event| match event {
+            PeerObserverEvent::RpcExtractor(r) => {
+                if let Some(ref e) = r.rpc_event {
+                    match e {
+                        BlockchainInfo(info) => {
+                            // Chain should be regtest for integration tests
+                            assert_eq!(info.chain, "regtest", "Chain should be regtest");
+
+                            // Bestblockhash should be a non-empty string (64 hex chars)
+                            assert_eq!(
+                                info.bestblockhash.len(),
+                                64,
+                                "Best block hash should be 64 hex characters"
+                            );
+
+                            // Difficulty should be > 0
+                            assert!(info.difficulty > 0.0, "Difficulty should be positive");
+
+                            // Verification progress should be between 0 and 1
+                            assert!(
+                                info.verificationprogress >= 0.0
+                                    && info.verificationprogress <= 1.0,
+                                "Verification progress should be between 0 and 1"
+                            );
+
+                            // Size on disk should be > 0
+                            assert!(info.size_on_disk > 0, "Size on disk should be positive");
+
+                            // In regtest, pruned should be false by default
+                            assert!(!info.pruned, "Regtest should not be pruned by default");
                         }
                         _ => panic!("unexpected RPC data {:?}", r.rpc_event),
                     }
