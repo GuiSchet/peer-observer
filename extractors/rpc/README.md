@@ -51,6 +51,8 @@ Options:
           Disable querying and publishing of `getaddrmaninfo` data
       --disable-getchaintxstats
           Disable querying and publishing of `getchaintxstats` data
+      --disable-getnetworkinfo
+          Disable querying and publishing of `getnetworkinfo` data
   -h, --help
           Print help
   -V, --version

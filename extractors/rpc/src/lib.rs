@@ -82,6 +82,10 @@ pub struct Args {
     /// Disable querying and publishing of `getchaintxstats` data.
     #[arg(long, default_value_t = false)]
     pub disable_getchaintxstats: bool,
+
+    /// Disable querying and publishing of `getnetworkinfo` data.
+    #[arg(long, default_value_t = false)]
+    pub disable_getnetworkinfo: bool,
 }
 
 impl Args {
@@ -99,6 +103,7 @@ impl Args {
         disable_getmemoryinfo: bool,
         disable_getaddrmaninfo: bool,
         disable_getchaintxstats: bool,
+        disable_getnetworkinfo: bool,
     ) -> Args {
         Self {
             nats_address,
@@ -115,6 +120,7 @@ impl Args {
             disable_getmemoryinfo,
             disable_getaddrmaninfo,
             disable_getchaintxstats,
+            disable_getnetworkinfo,
             // when adding more disable_* args, make sure to update the disable_all below
         }
     }
@@ -171,6 +177,10 @@ pub async fn run(args: Args, mut shutdown_rx: watch::Receiver<bool>) -> Result<(
         "Querying getchaintxstats enabled: {}",
         !args.disable_getchaintxstats
     );
+    log::info!(
+        "Querying getnetworkinfo enabled: {}",
+        !args.disable_getnetworkinfo
+    );
     // check if we have at least one RPC to query
     let disable_all = args.disable_getpeerinfo
         && args.disable_getmempoolinfo
@@ -178,7 +188,8 @@ pub async fn run(args: Args, mut shutdown_rx: watch::Receiver<bool>) -> Result<(
         && args.disable_getnettotals
         && args.disable_getmemoryinfo
         && args.disable_getaddrmaninfo
-        && args.disable_getchaintxstats;
+        && args.disable_getchaintxstats
+        && args.disable_getnetworkinfo;
     if disable_all {
         log::warn!("No RPC configured to be queried!");
     }
@@ -210,6 +221,10 @@ pub async fn run(args: Args, mut shutdown_rx: watch::Receiver<bool>) -> Result<(
                     && let Err(e) = getaddrmaninfo(&rpc_client, &nats_client).await {
                         log::error!("Could not fetch and publish 'getaddrmaninfo': {}", e)
                     }
+                if !args.disable_getnetworkinfo
+                    && let Err(e) = getnetworkinfo(&rpc_client, &nats_client).await {
+                        log::error!("Could not fetch and publish 'getnetworkinfo': {}", e)
+                }
             }
             _ = chaintxstats_interval.tick(), if !args.disable_getchaintxstats => {
                 if let Err(e) = getchaintxstats(&rpc_client, &nats_client).await {
@@ -345,6 +360,24 @@ async fn getchaintxstats(
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::ChainTxStats(
             chain_tx_stats.into(),
+        )),
+    }))?;
+
+    nats_client
+        .publish(Subject::Rpc.to_string(), proto.encode_to_vec().into())
+        .await?;
+    Ok(())
+}
+
+async fn getnetworkinfo(
+    rpc_client: &Client,
+    nats_client: &async_nats::Client,
+) -> Result<(), FetchOrPublishError> {
+    let network_info = rpc_client.get_network_info()?;
+
+    let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
+        rpc_event: Some(rpc_extractor::rpc::RpcEvent::NetworkInfo(
+            network_info.into(),
         )),
     }))?;
 

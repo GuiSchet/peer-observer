@@ -7,6 +7,10 @@ use corepc_client::types::v26::{
     AddrManInfoNetwork as RPCAddrManInfoNetwork, GetAddrManInfo as RPCGetAddrManInfo,
     GetMempoolInfo, GetPeerInfo as RPCGetPeerInfo, PeerInfo as RPCPeerInfo,
 };
+use corepc_node::vtype::{
+    GetNetworkInfo as RPCGetNetworkInfo, GetNetworkInfoAddress as RPCGetNetworkInfoAddress,
+    GetNetworkInfoNetwork as RPCGetNetworkInfoNetwork,
+};
 use std::fmt;
 
 // structs are generated via the rpc_extractor.proto file
@@ -43,6 +47,7 @@ impl fmt::Display for rpc::RpcEvent {
             rpc::RpcEvent::MemoryInfo(info) => write!(f, "{}", info),
             rpc::RpcEvent::AddrmanInfo(info) => write!(f, "{}", info),
             rpc::RpcEvent::ChainTxStats(stats) => write!(f, "{}", stats),
+            rpc::RpcEvent::NetworkInfo(info) => write!(f, "{}", info),
         }
     }
 }
@@ -200,6 +205,29 @@ impl From<RPCGetMemoryInfoStats> for MemoryInfo {
     }
 }
 
+impl From<RPCGetNetworkInfo> for NetworkInfo {
+    fn from(info: RPCGetNetworkInfo) -> Self {
+        NetworkInfo {
+            version: info.version as u32,
+            subversion: info.subversion,
+            protocol_version: info.protocol_version as u32,
+            local_services: info.local_services,
+            local_services_names: info.local_services_names,
+            local_relay: info.local_relay,
+            time_offset: info.time_offset as i32,
+            connections: info.connections as u32,
+            connections_in: info.connections_in as u32,
+            connections_out: info.connections_out as u32,
+            network_active: info.network_active,
+            networks: info.networks.into_iter().map(|n| n.into()).collect(),
+            relay_fee: info.relay_fee,
+            incremental_fee: info.incremental_fee,
+            local_addresses: info.local_addresses.into_iter().map(|a| a.into()).collect(),
+            warnings: info.warnings.join("; "),
+        }
+    }
+}
+
 impl fmt::Display for AddrManInfo {
     fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
         let total: u64 = self.networks.values().map(|n| n.total).sum();
@@ -213,6 +241,44 @@ impl fmt::Display for AddrManInfoNetwork {
             f,
             "AddrManInfoNetwork(new={}, tried={}, total={})",
             self.new, self.tried, self.total
+        )
+    }
+}
+
+impl From<RPCGetNetworkInfoNetwork> for NetworkInfoNetwork {
+    fn from(network: RPCGetNetworkInfoNetwork) -> Self {
+        NetworkInfoNetwork {
+            name: network.name,
+            limited: network.limited,
+            reachable: network.reachable,
+            proxy: network.proxy,
+            proxy_randomize_credentials: network.proxy_randomize_credentials,
+        }
+    }
+}
+
+impl From<RPCGetNetworkInfoAddress> for NetworkInfoLocalAddress {
+    fn from(address: RPCGetNetworkInfoAddress) -> Self {
+        NetworkInfoLocalAddress {
+            address: address.address,
+            port: address.port as u32,
+            score: address.score,
+        }
+    }
+}
+
+impl fmt::Display for NetworkInfo {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "NetworkInfo(version={}, connections={}, warnings={})",
+            self.version,
+            self.connections,
+            if self.warnings.is_empty() {
+                "none"
+            } else {
+                &self.warnings
+            }
         )
     }
 }
@@ -257,5 +323,20 @@ impl fmt::Display for ChainTxStats {
             "ChainTxStats(tx_count={}, tx_rate={:?})",
             self.tx_count, self.tx_rate
         )
+    }
+}
+impl fmt::Display for NetworkInfoNetwork {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(
+            f,
+            "Network(name={}, reachable={})",
+            self.name, self.reachable
+        )
+    }
+}
+
+impl fmt::Display for NetworkInfoLocalAddress {
+    fn fmt(&self, f: &mut fmt::Formatter) -> fmt::Result {
+        write!(f, "LocalAddress({}:{})", self.address, self.port)
     }
 }
