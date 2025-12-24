@@ -8,7 +8,8 @@ use shared::{
     prost::Message,
     protobuf::event::{Event, event::PeerObserverEvent},
     protobuf::rpc_extractor::rpc::RpcEvent::{
-        AddrmanInfo, ChainTxStats, MemoryInfo, MempoolInfo, NetTotals, PeerInfos, Uptime,
+        AddrmanInfo, ChainTxStats, MemoryInfo, MempoolInfo, NetTotals, NetworkInfo, PeerInfos,
+        Uptime,
     },
     simple_logger::SimpleLogger,
     testing::nats_server::NatsServerForTesting,
@@ -45,6 +46,7 @@ fn make_test_args(
     disable_getmemoryinfo: bool,
     disable_getaddrmaninfo: bool,
     disable_getchaintxstats: bool,
+    disable_getnetworkinfo: bool,
 ) -> Args {
     Args::new(
         format!("127.0.0.1:{}", nats_port),
@@ -59,6 +61,7 @@ fn make_test_args(
         disable_getmemoryinfo,
         disable_getaddrmaninfo,
         disable_getchaintxstats,
+        disable_getnetworkinfo,
     )
 }
 
@@ -98,6 +101,7 @@ async fn check(
     disable_getmemoryinfo: bool,
     disable_getaddrmaninfo: bool,
     disable_getchaintxstats: bool,
+    disable_getnetworkinfo: bool,
     check_expected: fn(PeerObserverEvent) -> (),
 ) {
     setup();
@@ -117,6 +121,7 @@ async fn check(
             disable_getmemoryinfo,
             disable_getaddrmaninfo,
             disable_getchaintxstats,
+            disable_getnetworkinfo,
         );
         rpc_extractor::run(args, shutdown_rx.clone())
             .await
@@ -144,7 +149,7 @@ async fn check(
 async fn test_integration_rpc_getpeerinfo() {
     println!("test that we receive getpeerinfo RPC events");
 
-    check(false, true, true, true, true, true, true, |event| {
+    check(false, true, true, true, true, true, true, true, |event| {
         match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -172,6 +177,7 @@ async fn test_integration_rpc_getmempoolinfo() {
     check(
         true,
         false,
+        true,
         true,
         true,
         true,
@@ -218,6 +224,7 @@ async fn test_integration_rpc_uptime() {
         true,
         true,
         true,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -245,6 +252,7 @@ async fn test_integration_rpc_getnettotals() {
         true,
         true,
         false,
+        true,
         true,
         true,
         true,
@@ -279,6 +287,7 @@ async fn test_integration_rpc_getmemoryinfo() {
         false,
         true,
         true,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -309,6 +318,7 @@ async fn test_integration_rpc_getaddrmaninfo() {
         true,
         true,
         false,
+        true,
         true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
@@ -356,6 +366,7 @@ async fn test_integration_rpc_getchaintxstats() {
         true,
         true,
         false,
+        true,
         |event| match event {
             PeerObserverEvent::RpcExtractor(r) => {
                 if let Some(ref e) = r.rpc_event {
@@ -369,6 +380,62 @@ async fn test_integration_rpc_getchaintxstats() {
                             // Note: window_tx_count, window_interval, and tx_rate
                             // are only present when window_block_count > 0, which
                             // requires mined blocks. Fresh regtest has 0 blocks.
+                        }
+                        _ => panic!("unexpected RPC data {:?}", r.rpc_event),
+                    }
+                }
+            }
+            _ => panic!("unexpected event {:?}", event),
+        },
+    )
+    .await;
+}
+
+#[tokio::test]
+async fn test_integration_rpc_getnetworkinfo() {
+    println!("test that we receive getnetworkinfo RPC events");
+
+    check(
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        true,
+        false,
+        |event| match event {
+            PeerObserverEvent::RpcExtractor(r) => {
+                if let Some(ref e) = r.rpc_event {
+                    match e {
+                        NetworkInfo(info) => {
+                            // Version checks
+                            assert!(info.version > 0);
+                            assert!(
+                                info.protocol_version >= 70001,
+                                "Protocol version should be modern"
+                            );
+                            assert!(
+                                info.subversion.starts_with("/Satoshi:"),
+                                "Subversion should start with /Satoshi:"
+                            );
+
+                            // Network checks - must include at least ipv4
+                            assert!(!info.networks.is_empty());
+                            assert!(
+                                info.networks.iter().any(|n| n.name == "ipv4"),
+                                "Should include ipv4 network"
+                            );
+
+                            // Connection checks - should have at least 1 (the test node)
+                            assert!(info.connections >= 1, "Should have at least 1 connection");
+
+                            // Fee checks - must be positive
+                            assert!(info.relay_fee > 0.0, "Relay fee should be positive");
+                            assert!(
+                                info.incremental_fee > 0.0,
+                                "Incremental fee should be positive"
+                            );
                         }
                         _ => panic!("unexpected RPC data {:?}", r.rpc_event),
                     }
