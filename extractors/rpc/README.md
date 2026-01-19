@@ -43,6 +43,8 @@ Options:
           An RPC cookie file for authentication with the Bitcoin Core RPC endpoint
       --query-interval <QUERY_INTERVAL>
           Interval (in seconds) in which to query from the Bitcoin Core RPC endpoint [default: 10]
+      --prometheus-address <PROMETHEUS_ADDRESS>
+          Address to serve Prometheus metrics on [default: 0.0.0.0:8284]
       --disable-getpeerinfo
           Disable querying and publishing of `getpeerinfo` data
       --disable-getmempoolinfo
