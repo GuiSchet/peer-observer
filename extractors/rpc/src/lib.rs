@@ -278,22 +278,27 @@ pub async fn run(args: Args, mut shutdown_rx: watch::Receiver<bool>) -> Result<(
     Ok(())
 }
 
+fn measure_rpc_call<T, E, F>(method_name: &str, f: F) -> Result<T, E>
+where
+    F: FnOnce() -> Result<T, E>,
+{
+    let _timer = metrics::RPC_FETCH_DURATION
+        .with_label_values(&[method_name])
+        .start_timer();
+    let res = f();
+    if res.is_err() {
+        metrics::RPC_FETCH_ERRORS
+            .with_label_values(&[method_name])
+            .inc();
+    }
+    res
+}
+
 async fn getpeerinfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let peer_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getpeerinfo"])
-            .start_timer();
-        let res = rpc_client.get_peer_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getpeerinfo"])
-                .inc();
-        }
-        res?
-    };
+    let peer_info = measure_rpc_call("getpeerinfo", || rpc_client.get_peer_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::PeerInfos(peer_info.into())),
@@ -314,18 +319,7 @@ async fn getmempoolinfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let mempool_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getmempoolinfo"])
-            .start_timer();
-        let res = rpc_client.get_mempool_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getmempoolinfo"])
-                .inc();
-        }
-        res?
-    };
+    let mempool_info = measure_rpc_call("getmempoolinfo", || rpc_client.get_mempool_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::MempoolInfo(
@@ -348,18 +342,7 @@ async fn uptime(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let uptime_seconds = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["uptime"])
-            .start_timer();
-        let res = rpc_client.uptime();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["uptime"])
-                .inc();
-        }
-        res?
-    };
+    let uptime_seconds = measure_rpc_call("uptime", || rpc_client.uptime())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::Uptime(uptime_seconds)),
@@ -380,18 +363,7 @@ async fn getnettotals(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let net_totals = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getnettotals"])
-            .start_timer();
-        let res = rpc_client.get_net_totals();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getnettotals"])
-                .inc();
-        }
-        res?
-    };
+    let net_totals = measure_rpc_call("getnettotals", || rpc_client.get_net_totals())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::NetTotals(net_totals.into())),
@@ -412,18 +384,7 @@ async fn getmemoryinfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let memory_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getmemoryinfo"])
-            .start_timer();
-        let res = rpc_client.get_memory_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getmemoryinfo"])
-                .inc();
-        }
-        res?
-    };
+    let memory_info = measure_rpc_call("getmemoryinfo", || rpc_client.get_memory_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::MemoryInfo(memory_info.into())),
@@ -444,18 +405,7 @@ async fn getaddrmaninfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let addrman_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getaddrmaninfo"])
-            .start_timer();
-        let res = rpc_client.get_addr_man_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getaddrmaninfo"])
-                .inc();
-        }
-        res?
-    };
+    let addrman_info = measure_rpc_call("getaddrmaninfo", || rpc_client.get_addr_man_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::AddrmanInfo(
@@ -478,18 +428,7 @@ async fn getchaintxstats(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let chain_tx_stats = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getchaintxstats"])
-            .start_timer();
-        let res = rpc_client.get_chain_tx_stats();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getchaintxstats"])
-                .inc();
-        }
-        res?
-    };
+    let chain_tx_stats = measure_rpc_call("getchaintxstats", || rpc_client.get_chain_tx_stats())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::ChainTxStats(
@@ -512,18 +451,7 @@ async fn getnetworkinfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let network_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getnetworkinfo"])
-            .start_timer();
-        let res = rpc_client.get_network_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getnetworkinfo"])
-                .inc();
-        }
-        res?
-    };
+    let network_info = measure_rpc_call("getnetworkinfo", || rpc_client.get_network_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::NetworkInfo(
@@ -546,18 +474,8 @@ async fn getblockchaininfo(
     rpc_client: &Client,
     nats_client: &async_nats::Client,
 ) -> Result<(), FetchOrPublishError> {
-    let blockchain_info = {
-        let _timer = metrics::RPC_FETCH_DURATION
-            .with_label_values(&["getblockchaininfo"])
-            .start_timer();
-        let res = rpc_client.get_blockchain_info();
-        if res.is_err() {
-            metrics::RPC_FETCH_ERRORS
-                .with_label_values(&["getblockchaininfo"])
-                .inc();
-        }
-        res?
-    };
+    let blockchain_info =
+        measure_rpc_call("getblockchaininfo", || rpc_client.get_blockchain_info())?;
 
     let proto = Event::new(PeerObserverEvent::RpcExtractor(rpc_extractor::Rpc {
         rpc_event: Some(rpc_extractor::rpc::RpcEvent::BlockchainInfo(
