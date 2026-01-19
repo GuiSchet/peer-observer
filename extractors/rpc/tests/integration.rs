@@ -1,6 +1,7 @@
 #![cfg(feature = "nats_integration_tests")]
 #![cfg(feature = "node_integration_tests")]
 
+use serial_test::serial;
 use shared::{
     async_nats, corepc_node,
     futures::StreamExt,
@@ -551,12 +552,11 @@ async fn test_integration_rpc_getblockchaininfo() {
 // ============================================================================
 
 /// Fetches the metrics from the Prometheus endpoint.
-async fn fetch_metrics(port: u16) -> Result<String, String> {
+fn fetch_metrics(port: u16) -> Result<String, String> {
     let url = format!("http://127.0.0.1:{}/metrics", port);
-    let client = reqwest::Client::new();
 
-    match client.get(&url).send().await {
-        Ok(response) => match response.text().await {
+    match ureq::get(&url).call() {
+        Ok(response) => match response.into_string() {
             Ok(text) => Ok(text),
             Err(e) => Err(format!("Failed to read response body: {}", e)),
         },
@@ -572,9 +572,11 @@ fn get_histogram_count(metrics_raw: &str, metric_name: &str, label_value: &str) 
         .find(|line| line.contains(&search_pattern))
         .and_then(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            parts.last().and_then(|v| v.parse::<u64>().ok())
+            parts
+                .last()
+                .map(|v| v.parse::<u64>().expect("failed to parse metric value"))
         })
-        .unwrap_or(0)
+        .expect("metric not found")
 }
 
 /// Extracts the value of a counter metric with a specific label.
@@ -585,12 +587,15 @@ fn get_counter_value(metrics_raw: &str, metric_name: &str, label_value: &str) ->
         .find(|line| line.starts_with(&search_pattern))
         .and_then(|line| {
             let parts: Vec<&str> = line.split_whitespace().collect();
-            parts.last().and_then(|v| v.parse::<u64>().ok())
+            parts
+                .last()
+                .map(|v| v.parse::<u64>().expect("failed to parse metric value"))
         })
-        .unwrap_or(0)
+        .expect("metric not found")
 }
 
 #[tokio::test]
+#[serial]
 async fn test_integration_metrics_server_basic() {
     setup();
     let (node1, _node2) = setup_two_connected_nodes();
@@ -621,7 +626,7 @@ async fn test_integration_metrics_server_basic() {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Fetch metrics and verify the server responds
-    let metrics = fetch_metrics(metrics_port).await;
+    let metrics = fetch_metrics(metrics_port);
     assert!(
         metrics.is_ok(),
         "Metrics server should respond: {:?}",
@@ -642,6 +647,7 @@ async fn test_integration_metrics_server_basic() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_integration_metrics_rpc_fetch_duration() {
     setup();
     let (node1, _node2) = setup_two_connected_nodes();
@@ -672,9 +678,7 @@ async fn test_integration_metrics_rpc_fetch_duration() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify duration was recorded
-    let metrics = fetch_metrics(metrics_port)
-        .await
-        .expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
 
     // Check that the histogram count for uptime is at least 1
     let uptime_count = get_histogram_count(
@@ -693,6 +697,7 @@ async fn test_integration_metrics_rpc_fetch_duration() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_integration_metrics_all_rpc_methods_duration() {
     setup();
     let (node1, _node2) = setup_two_connected_nodes();
@@ -723,9 +728,7 @@ async fn test_integration_metrics_all_rpc_methods_duration() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics
-    let metrics = fetch_metrics(metrics_port)
-        .await
-        .expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
 
     // Verify that each enabled RPC method has recorded at least one call
     let methods_to_check = [
@@ -757,6 +760,7 @@ async fn test_integration_metrics_all_rpc_methods_duration() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_integration_metrics_rpc_fetch_errors() {
     setup();
     let nats_server = NatsServerForTesting::new(&[]).await;
@@ -792,9 +796,7 @@ async fn test_integration_metrics_rpc_fetch_errors() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify error counter was incremented
-    let metrics = fetch_metrics(metrics_port)
-        .await
-        .expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
 
     // Check that the error counter for uptime is at least 1
     let error_count = get_counter_value(&metrics, "rpcextractor_rpc_fetch_errors_total", "uptime");
@@ -813,6 +815,7 @@ async fn test_integration_metrics_rpc_fetch_errors() {
 }
 
 #[tokio::test]
+#[serial]
 async fn test_integration_metrics_rpc_fetch_errors_invalid_auth() {
     setup();
     let (node1, _node2) = setup_two_connected_nodes();
@@ -851,9 +854,7 @@ async fn test_integration_metrics_rpc_fetch_errors_invalid_auth() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify error counter was incremented
-    let metrics = fetch_metrics(metrics_port)
-        .await
-        .expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
 
     // Check that the error counter for uptime is at least 1
     let error_count = get_counter_value(&metrics, "rpcextractor_rpc_fetch_errors_total", "uptime");
