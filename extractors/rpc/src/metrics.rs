@@ -8,6 +8,10 @@ const NAMESPACE: &str = "rpcextractor";
 
 pub const LABEL_RPC_METHOD: &str = "rpc_method";
 
+const RPC_DURATION_BUCKETS: [f64; 12] = [
+    0.001, 0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1.0, 2.5, 5.0, 10.0,
+];
+
 lazy_static! {
     /// Time it took to fetch data from the RPC endpoint.
     pub static ref RPC_FETCH_DURATION: HistogramVec = register_histogram_vec!(
@@ -15,7 +19,8 @@ lazy_static! {
             "rpc_fetch_duration_seconds",
             "Time it took to fetch data from the RPC endpoint."
         )
-        .namespace(NAMESPACE),
+        .namespace(NAMESPACE)
+        .buckets(RPC_DURATION_BUCKETS.to_vec()),
         &[LABEL_RPC_METHOD]
     )
     .expect("Could not create rpc_fetch_duration_seconds metric");
