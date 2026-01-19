@@ -6,6 +6,9 @@ edition = "2024"
 [dependencies]
 shared = { path = "../../shared" }
 
+[dev-dependencies]
+reqwest = "0.12"
+
 [features]
 # Treat warnings as a build error.
 strict = []
