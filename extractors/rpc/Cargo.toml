@@ -8,7 +8,6 @@ shared = { path = "../../shared" }
 
 [dev-dependencies]
 ureq = "2.9"
-serial_test = "3.0"
 
 [features]
 # Treat warnings as a build error.
