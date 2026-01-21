@@ -312,6 +312,18 @@ async fn test_integration_metrics_rpc_fetch_errors() {
         metrics
     );
 
+    // Verify that the duration histogram was NOT incremented on error (stop_and_discard)
+    let duration_count = get_histogram_count(
+        &metrics,
+        "rpcextractor_rpc_fetch_duration_seconds_count",
+        "uptime",
+    );
+    assert_eq!(
+        duration_count, 0,
+        "Duration histogram should NOT be incremented on error (stop_and_discard), got: {}",
+        duration_count
+    );
+
     shutdown_tx.send(true).unwrap();
     rpc_extractor_handle.await.unwrap();
 
@@ -367,6 +379,18 @@ async fn test_integration_metrics_rpc_fetch_errors_invalid_auth() {
         "Should have recorded at least one uptime RPC error due to invalid auth, got: {}. Metrics:\n{}",
         error_count,
         metrics
+    );
+
+    // Verify that the duration histogram was NOT incremented on error (stop_and_discard)
+    let duration_count = get_histogram_count(
+        &metrics,
+        "rpcextractor_rpc_fetch_duration_seconds_count",
+        "uptime",
+    );
+    assert_eq!(
+        duration_count, 0,
+        "Duration histogram should NOT be incremented on error (stop_and_discard), got: {}",
+        duration_count
     );
 
     shutdown_tx.send(true).unwrap();
