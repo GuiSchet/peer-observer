@@ -146,8 +146,7 @@ pub async fn run(args: Args, mut shutdown_rx: watch::Receiver<bool>) -> Result<(
     let metrics = Metrics::new();
 
     // Start the metric server with our custom registry.
-    shared::metricserver::start(&args.prometheus_address, Some(metrics.registry.clone()))
-        .expect("Could not start metric server");
+    shared::metricserver::start(&args.prometheus_address, Some(metrics.registry.clone()))?;
 
     let auth: Auth = match args.rpc_cookie_file {
         Some(path) => Auth::CookieFile(path.into()),
@@ -286,16 +285,22 @@ fn measure_rpc_call<T, E, F>(method_name: &str, metrics: &Metrics, f: F) -> Resu
 where
     F: FnOnce() -> Result<T, E>,
 {
-    let _timer = metrics
+    let timer = metrics
         .rpc_fetch_duration
         .with_label_values(&[method_name])
         .start_timer();
     let res = f();
-    if res.is_err() {
-        metrics
-            .rpc_fetch_errors
-            .with_label_values(&[method_name])
-            .inc();
+    match &res {
+        Ok(_) => {
+            timer.stop_and_record();
+        }
+        Err(_) => {
+            timer.stop_and_discard();
+            metrics
+                .rpc_fetch_errors
+                .with_label_values(&[method_name])
+                .inc();
+        }
     }
     res
 }
