@@ -37,8 +37,7 @@ use shared::{
     rand::{self, Rng},
     simple_logger::SimpleLogger,
     testing::{
-        metrics_fetcher::fetch_metrics_root,
-        nats_publisher::NatsPublisherForTesting,
+        metrics_fetcher::fetch_metrics_root, nats_publisher::NatsPublisherForTesting,
         nats_server::NatsServerForTesting,
     },
     tokio::{
