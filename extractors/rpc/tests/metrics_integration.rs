@@ -6,7 +6,10 @@ use shared::{
     log::{self, info},
     nats_util::NatsArgs,
     simple_logger::SimpleLogger,
-    testing::nats_server::NatsServerForTesting,
+    testing::{
+        metrics_fetcher::{fetch_metrics, get_counter_value, get_histogram_count},
+        nats_server::NatsServerForTesting,
+    },
     tokio::{self, sync::watch},
 };
 
@@ -105,49 +108,6 @@ fn setup_two_connected_nodes() -> (corepc_node::Node, corepc_node::Node) {
     (node1, node2)
 }
 
-/// Fetches the metrics from the Prometheus endpoint.
-fn fetch_metrics(port: u16) -> Result<String, String> {
-    let url = format!("http://127.0.0.1:{}/metrics", port);
-
-    match ureq::get(&url).call() {
-        Ok(response) => match response.into_string() {
-            Ok(text) => Ok(text),
-            Err(e) => Err(format!("Failed to read response body: {}", e)),
-        },
-        Err(e) => Err(format!("Failed to fetch metrics: {}", e)),
-    }
-}
-
-/// Extracts the count value from a histogram metric.
-fn get_histogram_count(metrics_raw: &str, metric_name: &str, label_value: &str) -> u64 {
-    let search_pattern = format!("{}{{rpc_method=\"{}\"}}", metric_name, label_value);
-    metrics_raw
-        .lines()
-        .find(|line| line.contains(&search_pattern))
-        .and_then(|line| {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            parts
-                .last()
-                .map(|v| v.parse::<u64>().expect("failed to parse metric value"))
-        })
-        .expect("metric not found")
-}
-
-/// Extracts the value of a counter metric with a specific label.
-fn get_counter_value(metrics_raw: &str, metric_name: &str, label_value: &str) -> u64 {
-    let search_pattern = format!("{}{{rpc_method=\"{}\"}}", metric_name, label_value);
-    metrics_raw
-        .lines()
-        .find(|line| line.starts_with(&search_pattern))
-        .and_then(|line| {
-            let parts: Vec<&str> = line.split_whitespace().collect();
-            parts
-                .last()
-                .map(|v| v.parse::<u64>().expect("failed to parse metric value"))
-        })
-        .expect("metric not found")
-}
-
 #[tokio::test]
 async fn test_integration_metrics_server_basic() {
     setup();
@@ -179,7 +139,7 @@ async fn test_integration_metrics_server_basic() {
     tokio::time::sleep(tokio::time::Duration::from_millis(500)).await;
 
     // Fetch metrics and verify the server responds
-    let metrics = fetch_metrics(metrics_port);
+    let metrics = fetch_metrics(metrics_port, "/metrics");
     assert!(
         metrics.is_ok(),
         "Metrics server should respond: {:?}",
@@ -225,7 +185,7 @@ async fn test_integration_metrics_rpc_fetch_duration() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify duration was recorded
-    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port, "/metrics").expect("Should fetch metrics");
 
     // Check that the histogram count for uptime is at least 1
     let uptime_count = get_histogram_count(
@@ -274,7 +234,7 @@ async fn test_integration_metrics_all_rpc_methods_duration() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics
-    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port, "/metrics").expect("Should fetch metrics");
 
     // Verify that each enabled RPC method has recorded at least one call
     let methods_to_check = [
@@ -341,7 +301,7 @@ async fn test_integration_metrics_rpc_fetch_errors() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify error counter was incremented
-    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port, "/metrics").expect("Should fetch metrics");
 
     // Check that the error counter for uptime is at least 1
     let error_count = get_counter_value(&metrics, "rpcextractor_rpc_fetch_errors_total", "uptime");
@@ -398,7 +358,7 @@ async fn test_integration_metrics_rpc_fetch_errors_invalid_auth() {
     tokio::time::sleep(tokio::time::Duration::from_secs(QUERY_INTERVAL_SECONDS + 1)).await;
 
     // Fetch metrics and verify error counter was incremented
-    let metrics = fetch_metrics(metrics_port).expect("Should fetch metrics");
+    let metrics = fetch_metrics(metrics_port, "/metrics").expect("Should fetch metrics");
 
     // Check that the error counter for uptime is at least 1
     let error_count = get_counter_value(&metrics, "rpcextractor_rpc_fetch_errors_total", "uptime");

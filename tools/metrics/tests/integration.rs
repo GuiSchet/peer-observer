@@ -36,7 +36,11 @@ use shared::{
     },
     rand::{self, Rng},
     simple_logger::SimpleLogger,
-    testing::{nats_publisher::NatsPublisherForTesting, nats_server::NatsServerForTesting},
+    testing::{
+        metrics_fetcher::fetch_metrics_root,
+        nats_publisher::NatsPublisherForTesting,
+        nats_server::NatsServerForTesting,
+    },
     tokio::{
         self,
         sync::{watch, Mutex},
@@ -48,8 +52,6 @@ use shared::{
 use std::{
     collections::HashMap,
     io::ErrorKind,
-    io::{Read, Write},
-    net::TcpStream,
     sync::{
         atomic::{AtomicU16, Ordering},
         Arc, Once, OnceLock,
@@ -97,31 +99,8 @@ fn make_test_args(nats_port: u16, metrics_port: u16) -> Args {
     )
 }
 
-fn fetch_metrics(port: u16) -> Result<String, std::io::Error> {
-    let addr = format!("127.0.0.1:{}", port);
-    debug!("fetching metrics from {}", addr);
-    let mut stream = TcpStream::connect(addr.clone())?;
-    stream.set_read_timeout(Some(Duration::from_secs(5)))?;
-    stream.set_write_timeout(Some(Duration::from_secs(5)))?;
-
-    let request = format!(
-        "GET / HTTP/1.1\r\nHost: {}\r\nConnection: close\r\n\r\n",
-        addr
-    );
-
-    stream.write_all(request.as_bytes()).unwrap();
-    stream.flush()?;
-
-    // Read the full response until EOF (server closes the connection).
-    let mut response = Vec::new();
-    let mut s = stream;
-    s.read_to_end(&mut response)?;
-
-    Ok(String::from_utf8_lossy(&response).to_string())
-}
-
 fn check_metrics(port: u16, expected: &[&str]) -> Result<bool, std::io::Error> {
-    let metrics_raw = fetch_metrics(port)?;
+    let metrics_raw = fetch_metrics_root(port)?;
 
     println!("HTTP response from metrics server:\n");
     for line in metrics_raw.split("\n") {
