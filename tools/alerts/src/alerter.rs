@@ -8,8 +8,10 @@ pub enum SpammerKind {
 
 /// Every observation the alerts tool publishes flows through this enum
 /// `Spammer` is emitted when a peer crosses a configured threshold once
+/// `AddrEntriesSpammer` is emitted when a peer's addr/addrv2 entries exhaust a
+/// token bucket modeled on Bitcoin Core's addr rate limiting
 /// `PeerDisconnected` is emitted when a previously-flagged peer disconnects
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Alert {
     Spammer {
         kind: SpammerKind,
@@ -18,6 +20,20 @@ pub enum Alert {
         count: usize,
         window_secs: u64,
         threshold: usize,
+    },
+    AddrEntriesSpammer {
+        peer_id: u64,
+        addr: String,
+        /// Cumulative number of addr/addrv2 entries dropped by the token bucket
+        rate_limited: u64,
+        /// `rate_limited` value that triggered the alert
+        threshold: u64,
+        /// Token bucket capacity / refill ceiling (entries)
+        bucket_capacity: u64,
+        /// Token refill rate (entries per second)
+        rate_per_sec: f64,
+        /// Number of outbound GETADDR requests observed for this peer
+        getaddr_requests_sent: u64,
     },
     PeerDisconnected {
         peer_id: u64,
@@ -47,6 +63,19 @@ impl std::fmt::Display for Alert {
                     name, peer_id, addr, count, unit, window_secs, threshold
                 )
             }
+            Alert::AddrEntriesSpammer {
+                peer_id,
+                addr,
+                rate_limited,
+                threshold,
+                bucket_capacity,
+                rate_per_sec,
+                getaddr_requests_sent,
+            } => write!(
+                f,
+                "AddrEntriesSpammer | peer_id={} addr={} | {} addr/addrv2 entries rate-limited (threshold: {}, bucket: {}, rate: {}/s, getaddr_sent: {})",
+                peer_id, addr, rate_limited, threshold, bucket_capacity, rate_per_sec, getaddr_requests_sent
+            ),
             Alert::PeerDisconnected {
                 peer_id,
                 addr,
@@ -97,5 +126,28 @@ impl IntegrationTestAlerter {
 impl Alerter for IntegrationTestAlerter {
     fn emit(&self, alert: Alert) {
         let _ = self.tx.send(alert);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn addr_entries_spammer_display_includes_bucket_rate_and_getaddr_count() {
+        let alert = Alert::AddrEntriesSpammer {
+            peer_id: 42,
+            addr: "203.0.113.5:8333".to_string(),
+            rate_limited: 1234,
+            threshold: 77,
+            bucket_capacity: 1000,
+            rate_per_sec: 0.25,
+            getaddr_requests_sent: 3,
+        };
+
+        assert_eq!(
+            alert.to_string(),
+            "AddrEntriesSpammer | peer_id=42 addr=203.0.113.5:8333 | 1234 addr/addrv2 entries rate-limited (threshold: 77, bucket: 1000, rate: 0.25/s, getaddr_sent: 3)"
+        );
     }
 }
