@@ -53,10 +53,8 @@ or by being evicted after `--peer-stale-secs` of inactivity), the same `Alerter`
 emits a `PeerDisconnected` alert with the duration of the spamming episode:
 
 ```
-PeerDisconnected | peer_id=<id> addr=<addr> | active=<duration>s
+PeerDisconnected | peer_id=<id> addr=<addr> | active=<duration>s | flags=[<reason>, ...]
 ```
-
-Non-flagged peers disconnect silently (no alert is emitted).
 
 ## Usage
 
@@ -126,5 +124,5 @@ Example output:
 INFO  [alerts::alerter] PingSpammer | peer_id=42 addr=1.2.3.4:8333 | 4 pings in last 30s (threshold: 3)
 INFO  [alerts::alerter] AddrSpammer | peer_id=7 addr=5.6.7.8:8333 | 3 addr/addrv2 messages in last 60s (threshold: 2)
 INFO  [alerts::alerter] AddrEntriesSpammer | peer_id=9 addr=8.8.8.8:8333 | 15 addr/addrv2 entries rate-limited (threshold: 5, bucket: 5, rate: 0.1/s, getaddr_sent: 0)
-INFO  [alerts::alerter] PeerDisconnected | peer_id=42 addr=1.2.3.4:8333 | active=47s
+INFO  [alerts::alerter] PeerDisconnected | peer_id=42 addr=1.2.3.4:8333 | active=47s | flags=[PingSpammer]
 ```

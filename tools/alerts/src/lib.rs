@@ -19,7 +19,7 @@ use std::time::{Duration, Instant};
 
 pub mod alerter;
 
-pub use crate::alerter::{Alert, Alerter, LoggingAlerter, SpammerKind};
+pub use crate::alerter::{Alert, Alerter, LoggingAlerter, PeerFlag, SpammerKind};
 
 #[derive(Parser, Debug, Clone)]
 #[command(version, about, long_about = None)]
@@ -243,18 +243,28 @@ impl AlertState {
 /// spammers, including how long they were active. Returns `None` for peers
 /// that were never flagged so non-flagged disconnects stay silent
 fn disconnect_alert(peer_id: u64, peer: &PeerState, now: Instant) -> Option<Alert> {
-    let first_alerted = [
-        peer.ping.alerted_at,
-        peer.addr.alerted_at,
-        peer.addr_entries.alerted_at,
-    ]
-    .into_iter()
-    .flatten()
-    .min()?;
+    // Keep this list in the canonical display order. Using the same source for
+    // both the duration and flags prevents the two from drifting apart as new
+    // peer heuristics are added.
+    let flags_and_times = [
+        (PeerFlag::PingSpammer, peer.ping.alerted_at),
+        (PeerFlag::AddrSpammer, peer.addr.alerted_at),
+        (PeerFlag::AddrEntriesSpammer, peer.addr_entries.alerted_at),
+    ];
+    let first_alerted = flags_and_times
+        .iter()
+        .filter_map(|(_, alerted_at)| *alerted_at)
+        .min()?;
+    let flags = flags_and_times
+        .into_iter()
+        .filter_map(|(flag, alerted_at)| alerted_at.map(|_| flag))
+        .collect();
+
     Some(Alert::PeerDisconnected {
         peer_id,
         addr: peer.peer_addr.clone(),
         active_secs: now.duration_since(first_alerted).as_secs(),
+        flags,
     })
 }
 
@@ -475,6 +485,37 @@ mod tests {
         let mut peer = PeerState::new("1.2.3.4:8333".to_string(), now, 0);
         peer.addr_entries.tokens = initial_tokens;
         peer
+    }
+
+    #[test]
+    fn disconnect_alert_is_none_for_unflagged_peer() {
+        let now = Instant::now();
+        let peer = make_peer(now);
+
+        assert!(disconnect_alert(1, &peer, now + Duration::from_secs(10)).is_none());
+    }
+
+    #[test]
+    fn disconnect_alert_includes_all_flags_and_uses_first_alert_time() {
+        let t0 = Instant::now();
+        let mut peer = make_peer(t0);
+        peer.ping.alerted_at = Some(t0 + Duration::from_secs(2));
+        peer.addr.alerted_at = Some(t0 + Duration::from_secs(4));
+        peer.addr_entries.alerted_at = Some(t0 + Duration::from_secs(6));
+
+        assert_eq!(
+            disconnect_alert(7, &peer, t0 + Duration::from_secs(10)),
+            Some(Alert::PeerDisconnected {
+                peer_id: 7,
+                addr: "1.2.3.4:8333".to_string(),
+                active_secs: 8,
+                flags: vec![
+                    PeerFlag::PingSpammer,
+                    PeerFlag::AddrSpammer,
+                    PeerFlag::AddrEntriesSpammer,
+                ],
+            })
+        );
     }
 
     fn unwrap_addr_entries(alert: Alert) -> (u64, u64, u64, u64) {

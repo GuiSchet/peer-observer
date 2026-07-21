@@ -1,6 +1,6 @@
 #![cfg(feature = "nats_integration_tests")]
 
-use alerts::{alerter::IntegrationTestAlerter, Alert, Args, SpammerKind};
+use alerts::{alerter::IntegrationTestAlerter, Alert, Args, PeerFlag, SpammerKind};
 
 use shared::{
     anyhow,
@@ -545,7 +545,89 @@ async fn test_flagged_peer_disconnect_emits_disconnect_alert() {
     // Flagged peer's Close emits a `PeerDisconnected` alert through the same channel
     let disconnect = recv_alert(&mut harness.rx, Duration::from_secs(2)).await;
     match disconnect {
-        Alert::PeerDisconnected { peer_id, .. } => assert_eq!(peer_id, 50),
+        Alert::PeerDisconnected { peer_id, flags, .. } => {
+            assert_eq!(peer_id, 50);
+            assert_eq!(flags, vec![PeerFlag::PingSpammer]);
+        }
+        other => panic!("expected Alert::PeerDisconnected, got {other:?}"),
+    }
+
+    harness.shutdown().await;
+}
+
+/// Verifies that a peer which triggers every current peer heuristic reports all
+/// reasons in canonical order when it disconnects
+#[tokio::test]
+async fn test_disconnect_includes_all_triggered_flags() {
+    let mut harness = TestHarness::new(|port| {
+        make_test_args(
+            port,
+            AlertSettingsInTest {
+                ping_threshold: 1,
+                addr_threshold: 0,
+                addr_entries_initial_tokens: 1,
+                addr_entries_rate_per_sec: 0.0,
+                addr_entries_threshold: 0,
+                ..Default::default()
+            },
+        )
+    })
+    .await;
+
+    let peer_id = 51;
+    let addr = "51.52.53.54:8333";
+    publish_n(
+        &harness.publisher,
+        &Subject::NetMsg.to_string(),
+        &make_ping_event(peer_id, addr, true),
+        2,
+    )
+    .await;
+    let (kind, alert_peer_id, _, _) =
+        unwrap_spammer(recv_alert(&mut harness.rx, Duration::from_secs(2)).await);
+    assert_eq!(kind, SpammerKind::Ping);
+    assert_eq!(alert_peer_id, peer_id);
+
+    harness
+        .publisher
+        .publish(
+            Subject::NetMsg.to_string(),
+            make_addr_event(peer_id, addr, 3).encode_to_vec(),
+        )
+        .await;
+    let (kind, alert_peer_id, _, _) =
+        unwrap_spammer(recv_alert(&mut harness.rx, Duration::from_secs(2)).await);
+    assert_eq!(kind, SpammerKind::Addr);
+    assert_eq!(alert_peer_id, peer_id);
+    let (alert_peer_id, _, _, _) =
+        unwrap_addr_entries_spammer(recv_alert(&mut harness.rx, Duration::from_secs(2)).await);
+    assert_eq!(alert_peer_id, peer_id);
+
+    harness
+        .publisher
+        .publish(
+            Subject::NetConn.to_string(),
+            make_closed_event(peer_id, addr).encode_to_vec(),
+        )
+        .await;
+
+    let disconnect = recv_alert(&mut harness.rx, Duration::from_secs(2)).await;
+    match disconnect {
+        Alert::PeerDisconnected {
+            peer_id: disconnected_peer_id,
+            flags,
+            ..
+        } => {
+            assert_eq!(disconnected_peer_id, peer_id);
+            assert_eq!(
+                flags,
+                vec![
+                    PeerFlag::PingSpammer,
+                    PeerFlag::AddrSpammer,
+                    PeerFlag::AddrEntriesSpammer,
+                ]
+            );
+        }
         other => panic!("expected Alert::PeerDisconnected, got {other:?}"),
     }
 
@@ -588,7 +670,10 @@ async fn test_stale_peer_cleanup_emits_disconnect_alert() {
     // Wait for the cleanup interval to evict peer 60 (interval = peer_stale_secs = 1s)
     let disconnect = recv_alert(&mut harness.rx, Duration::from_secs(5)).await;
     match disconnect {
-        Alert::PeerDisconnected { peer_id, .. } => assert_eq!(peer_id, 60),
+        Alert::PeerDisconnected { peer_id, flags, .. } => {
+            assert_eq!(peer_id, 60);
+            assert_eq!(flags, vec![PeerFlag::PingSpammer]);
+        }
         other => panic!("expected Alert::PeerDisconnected, got {other:?}"),
     }
 
@@ -795,7 +880,10 @@ async fn test_addr_entries_flagged_peer_disconnect_emits_disconnect_alert() {
     // The flagged peer's Close must emit a `PeerDisconnected` through the channel
     let disconnect = recv_alert(&mut harness.rx, Duration::from_secs(2)).await;
     match disconnect {
-        Alert::PeerDisconnected { peer_id, .. } => assert_eq!(peer_id, 90),
+        Alert::PeerDisconnected { peer_id, flags, .. } => {
+            assert_eq!(peer_id, 90);
+            assert_eq!(flags, vec![PeerFlag::AddrEntriesSpammer]);
+        }
         other => panic!("expected Alert::PeerDisconnected, got {other:?}"),
     }
 

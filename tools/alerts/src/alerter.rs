@@ -6,6 +6,24 @@ pub enum SpammerKind {
     Addr,
 }
 
+/// Reason a peer was flagged and kept in state until it disconnected
+#[derive(Copy, Clone, Debug, PartialEq, Eq)]
+pub enum PeerFlag {
+    PingSpammer,
+    AddrSpammer,
+    AddrEntriesSpammer,
+}
+
+impl std::fmt::Display for PeerFlag {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            PeerFlag::PingSpammer => f.write_str("PingSpammer"),
+            PeerFlag::AddrSpammer => f.write_str("AddrSpammer"),
+            PeerFlag::AddrEntriesSpammer => f.write_str("AddrEntriesSpammer"),
+        }
+    }
+}
+
 /// Every observation the alerts tool publishes flows through this enum
 /// `Spammer` is emitted when a peer crosses a configured threshold once
 /// `AddrEntriesSpammer` is emitted when a peer's addr/addrv2 entries exhaust a
@@ -39,6 +57,8 @@ pub enum Alert {
         peer_id: u64,
         addr: String,
         active_secs: u64,
+        /// Heuristics that caused this peer to be tracked until disconnect
+        flags: Vec<PeerFlag>,
     },
 }
 
@@ -80,11 +100,21 @@ impl std::fmt::Display for Alert {
                 peer_id,
                 addr,
                 active_secs,
-            } => write!(
-                f,
-                "PeerDisconnected | peer_id={} addr={} | active={}s",
-                peer_id, addr, active_secs
-            ),
+                flags,
+            } => {
+                write!(
+                    f,
+                    "PeerDisconnected | peer_id={} addr={} | active={}s | flags=[",
+                    peer_id, addr, active_secs
+                )?;
+                for (index, flag) in flags.iter().enumerate() {
+                    if index > 0 {
+                        f.write_str(", ")?;
+                    }
+                    write!(f, "{flag}")?;
+                }
+                f.write_str("]")
+            }
         }
     }
 }
@@ -148,6 +178,40 @@ mod tests {
         assert_eq!(
             alert.to_string(),
             "AddrEntriesSpammer | peer_id=42 addr=203.0.113.5:8333 | 1234 addr/addrv2 entries rate-limited (threshold: 77, bucket: 1000, rate: 0.25/s, getaddr_sent: 3)"
+        );
+    }
+
+    #[test]
+    fn peer_disconnected_display_includes_all_flags() {
+        let alert = Alert::PeerDisconnected {
+            peer_id: 42,
+            addr: "203.0.113.5:8333".to_string(),
+            active_secs: 105,
+            flags: vec![
+                PeerFlag::PingSpammer,
+                PeerFlag::AddrSpammer,
+                PeerFlag::AddrEntriesSpammer,
+            ],
+        };
+
+        assert_eq!(
+            alert.to_string(),
+            "PeerDisconnected | peer_id=42 addr=203.0.113.5:8333 | active=105s | flags=[PingSpammer, AddrSpammer, AddrEntriesSpammer]"
+        );
+    }
+
+    #[test]
+    fn peer_disconnected_display_includes_single_flag() {
+        let alert = Alert::PeerDisconnected {
+            peer_id: 7,
+            addr: "198.51.100.9:8333".to_string(),
+            active_secs: 12,
+            flags: vec![PeerFlag::AddrEntriesSpammer],
+        };
+
+        assert_eq!(
+            alert.to_string(),
+            "PeerDisconnected | peer_id=7 addr=198.51.100.9:8333 | active=12s | flags=[AddrEntriesSpammer]"
         );
     }
 }
